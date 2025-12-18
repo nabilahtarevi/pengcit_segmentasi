@@ -1,0 +1,177 @@
+import cv2
+import numpy as np
+import matplotlib.pyplot as plt
+
+img = cv2.imread("potrait.jpg", 0)
+
+def salt_pepper(img, amount=0.05):
+    out = img.copy()
+    n = int(amount * img.size)
+    coords = (
+        np.random.randint(0, img.shape[0], n),
+        np.random.randint(0, img.shape[1], n)
+    )
+    out[coords] = np.random.choice([0, 255], n)
+    return out
+
+def gaussian_noise(img, level=20):
+    noise = np.random.normal(0, np.sqrt(level), img.shape)
+    return np.clip(img + noise, 0, 255).astype(np.uint8)
+
+img_sp = salt_pepper(img, 0.05)
+img_gs = gaussian_noise(img, 20)
+
+def mean_filter(img, k=3):
+    pad = k // 2
+    padded = np.pad(img, pad)
+    out = np.zeros_like(img)
+    for i in range(img.shape[0]):
+        for j in range(img.shape[1]):
+            out[i, j] = np.mean(padded[i:i+k, j:j+k])
+    return out.astype(np.uint8)
+
+def median_filter(img, k=3):
+    pad = k // 2
+    padded = np.pad(img, pad)
+    out = np.zeros_like(img)
+    for i in range(img.shape[0]):
+        for j in range(img.shape[1]):
+            out[i, j] = np.median(padded[i:i+k, j:j+k])
+    return out.astype(np.uint8)
+
+img_sp_med = median_filter(img_sp)
+img_sp_mean = mean_filter(img_sp)
+
+def conv(img, kernel):
+    h, w = img.shape
+    kh, kw = kernel.shape
+    p = kh // 2
+    padded = np.pad(img, p)
+    out = np.zeros_like(img)
+    for i in range(h):
+        for j in range(w):
+            out[i, j] = abs(np.sum(padded[i:i+kh, j:j+kw] * kernel))
+    return np.clip(out, 0, 255)
+
+def roberts(img):
+    kx = np.array([[1, 0], [0, -1]])
+    ky = np.array([[0, 1], [-1, 0]])
+    return conv(img, kx) + conv(img, ky)
+
+def prewitt(img):
+    kx = np.array([[-1, 0, 1]] * 3)
+    ky = np.array([[1]*3, [0]*3, [-1]*3])
+    return conv(img, kx) + conv(img, ky)
+
+def sobel(img):
+    kx = np.array([[-1, 0, 1], [-2, 0, 2], [-1, 0, 1]])
+    ky = np.array([[1, 2, 1], [0, 0, 0], [-1, -2, -1]])
+    return conv(img, kx) + conv(img, ky)
+
+def frei_chen(img):
+    kernel = np.array([[1, 1, 1],
+                       [1, -8, 1],
+                       [1, 1, 1]])
+    return conv(img, kernel)
+
+methods = {
+    "Roberts": roberts,
+    "Prewitt": prewitt,
+    "Sobel": sobel,
+    "Frei–Chen": frei_chen
+}
+
+plt.figure(figsize=(18, 6), dpi=150)
+titles = ["Grayscale", "Salt & Pepper", "Gaussian"]
+images = [img, img_sp, img_gs]
+
+for i in range(3):
+    plt.subplot(1, 3, i+1)
+    plt.imshow(images[i], cmap='gray')
+    plt.title(titles[i])
+    plt.axis('off')
+
+plt.suptitle("Citra Awal Sebelum Segmentasi")
+plt.tight_layout()
+plt.show()
+
+def mse(a, b):
+    return np.mean((a.astype(float) - b.astype(float)) ** 2)
+
+def print_mse(name, values):
+    print(f"\n=== MSE Metode {name} ===")
+    print(f"Grayscale vs Salt & Pepper : {values[0]:.4f}")
+    print(f"Grayscale vs Gaussian      : {values[1]:.4f}")
+    print(f"Grayscale vs SP + Median   : {values[2]:.4f}")
+    print(f"Grayscale vs SP + Mean     : {values[3]:.4f}")
+
+mse_freq = {}
+
+for name, func in methods.items():
+    sg = func(img)
+    ssp = func(img_sp)
+    sgs = func(img_gs)
+    ssp_med = func(img_sp_med)
+    ssp_mean = func(img_sp_mean)
+
+    plt.figure(figsize=(20, 12), dpi=150)
+
+    plt.subplot(2, 3, 1)
+    plt.imshow(sg, cmap='gray')
+    plt.title("Grayscale")
+    plt.axis('off')
+
+    plt.subplot(2, 3, 2)
+    plt.imshow(ssp, cmap='gray')
+    plt.title("Salt & Pepper")
+    plt.axis('off')
+
+    plt.subplot(2, 3, 3)
+    plt.imshow(sgs, cmap='gray')
+    plt.title("Gaussian")
+    plt.axis('off')
+
+    plt.subplot(2, 3, 4)
+    plt.imshow(ssp_med, cmap='gray')
+    plt.title("SP + Median")
+    plt.axis('off')
+
+    plt.subplot(2, 3, 5)
+    plt.imshow(ssp_mean, cmap='gray')
+    plt.title("SP + Mean")
+    plt.axis('off')
+
+    plt.suptitle(f"Segmentasi Metode {name}")
+    plt.tight_layout(rect=[0, 0, 1, 0.95])
+    plt.show()
+
+    mse_freq[name] = [
+        mse(sg, ssp),
+        mse(sg, sgs),
+        mse(sg, ssp_med),
+        mse(sg, ssp_mean)
+    ]
+
+    print_mse(name, mse_freq[name])
+
+labels = [
+    "Gray vs SP",
+    "Gray vs Gaussian",
+    "Gray vs SP + Median",
+    "Gray vs SP + Mean"
+]
+
+x = np.arange(len(labels))
+w = 0.2
+
+plt.figure(figsize=(14, 6), dpi=150)
+for i, (name, values) in enumerate(mse_freq.items()):
+    plt.bar(x + i*w, values, w, label=name)
+
+plt.xticks(x + 1.5*w, labels)
+plt.ylabel("MSE")
+plt.title("Perbandingan MSE Segmentasi")
+plt.legend()
+plt.grid(axis='y')
+plt.tight_layout()
+plt.show()
